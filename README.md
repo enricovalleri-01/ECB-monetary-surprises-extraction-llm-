@@ -1,4 +1,3 @@
-# ECB-monetary-surprises-extraction-llm-
 
 # ECB Communications as Monetary Shocks: A Multi-Agent LLM Framework and Asymmetric Transmission Analysis
 
