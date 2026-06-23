@@ -11,11 +11,11 @@ M.Sc. in Applied Economics and Markets | A.Y. 2025/2026
 
 This repository contains the code and data for the master's thesis *"ECB Communications as Monetary Shocks: A Multi-Agent LLM Framework and Asymmetric Transmission Analysis"*.
 
-The project pursues two connected objectives. The first is methodological: constructing a historical series of monetary policy surprises for the European Central Bank (ECB) over the period March 1999 – December 2025, covering all 312 Governing Council meetings, by extracting quantitative signals directly from the ECB's official communications using a sequence of four large language model agents. The second is empirical: using this surprise series as a monetary policy shock in a Local Projections framework to estimate the dynamic transmission of ECB surprises on euro area inflation, testing for asymmetry between hawkish and dovish shocks.
+The project pursues two connected objectives. The first is methodological: constructing a historical series of monetary policy surprises for the European Central Bank (ECB) over the period March 1999 – December 2025, covering all 312 Governing Council meetings, by extracting quantitative signals directly from the ECB's official communications using a four-stage pipeline. The second is empirical: using this surprise series as a monetary policy shock in a Local Projections framework to estimate the dynamic transmission of ECB surprises on euro area HICP inflation, testing for asymmetry between hawkish and dovish shocks.
 
 The pipeline is built around two methodological principles:
 
-- **Ex-ante purity**: every document used by the agents was publicly available before the ten-day pre-meeting blackout period — no look-ahead bias by construction.
+- **Ex-ante construction**: every document used by the pipeline was publicly available before the ten-day pre-meeting blackout period. This applies to the document inputs; the language model reading them was trained on more recent data, a residual limitation acknowledged in the thesis.
 - **Market neutrality**: expectations are formed exclusively from official institutional communications, without incorporating any asset price information.
 
 ---
@@ -26,7 +26,7 @@ The pipeline is built around two methodological principles:
 ecb-monetary-surprises-llm/
 │
 ├── notebooks/
-│   ├── ECB_Pipeline_MASTER.ipynb        # Main LLM pipeline (4 agents)
+│   ├── ECB_Pipeline_MASTER.ipynb        # Main LLM pipeline (4 stages)
 │   └── ECB_LocalProjections.ipynb       # Econometric analysis (Local Projections)
 │
 ├── data/
@@ -45,14 +45,16 @@ ecb-monetary-surprises-llm/
 
 ## Pipeline Architecture
 
-The pipeline consists of four sequential agents, each processing a specific set of documents and producing a structured JSON output passed to the next agent. All agents use Google Gemini 2.5 Flash at temperature 0.1.
+The pipeline consists of four sequential stages: two LLM agents that read documents (Agents IM and IB) and two deterministic modules that synthesise their outputs (Agents II and III). Only Agents IM and IB call the Gemini API; Agents II and III are fully arithmetic.
 
-| Agent | Role | Input | Output |
+| Stage | Role | Input | Output |
 |-------|------|-------|--------|
-| **Agent IM** | Monetary Intelligence | ECB Accounts (2015–2025) or Press Conference Introductory Statement (1999–2014) | Hawkishness score, council division, forward guidance classification, prior probability distribution |
-| **Agent IB** | Economic Conditions | Economic/Monthly Bulletin + Governing Council speeches (28-day window, 10-day blackout) | Five economic condition scores weighted by ECB mandate hierarchy |
-| **Agent II** | Synthesis | Outputs of IM and IB | Posterior probability distribution over rate decisions via softmax update |
-| **Agent III** | Surprise Calculation | Agent II posterior + actual ECB decision | Mechanical, salience, and normalised surprise measures |
+| **Agent IM** | Monetary Intelligence | ECB Accounts (2015–2025) or Press Conference Introductory Statement (1999–2014) | Hawkishness score, forward guidance classification (Odyssean/Delphic), prior probability distribution over rate bins |
+| **Agent IB** | Economic Conditions | Economic/Monthly Bulletin + Governing Council speeches (28-day window, 10-day blackout) | Five economic condition scores; aggregate index s_IB = 0.50·e₁ + 0.30·e₂ + 0.20·e₃ |
+| **Agent II** | Synthesis (deterministic) | Outputs of IM and IB | Posterior probability distribution via two-stage softmax update: s_policy = 0.60·h_IM + 0.20·s_FG + 0.20·e₄; s_econ = 0.70·s_IB + 0.30·e_speech; s̃ = 0.55·s_policy + 0.45·s_econ |
+| **Agent III** | Surprise Calculation (deterministic) | Agent II posterior + actual ECB decision | Mechanical surprise s_mech = Δ_actual − E[Δ]; salience and normalised measures |
+
+All LLM calls use Google Gemini 2.5 Flash at temperature 0.1.
 
 ---
 
@@ -77,14 +79,16 @@ The pipeline consists of four sequential agents, each processing a specific set 
 
 |  | Full sample | Duisenberg/Trichet | Draghi | Lagarde |
 |--|------------|-------------------|--------|---------|
-| Meetings | 312 | 189 | 75 | 48 |
-| Mean | −1.3 bp | −5.6 bp | +6.4 bp | +3.7 bp |
-| Std dev | 13.0 bp | 13.2 bp | 8.6 bp | 13.4 bp |
-| No surprise | 135 (43%) | 67 (35%) | 46 (61%) | 22 (46%) |
-| Hawkish | 79 (25%) | 41 (22%) | 21 (28%) | 17 (35%) |
-| Dovish | 98 (31%) | 81 (43%) | 8 (11%) | 9 (19%) |
+| Meetings | 312 | 187 | 76 | 49 |
+| Mean | −1.1 bp | −5.5 bp | +6.5 bp | +3.8 bp |
+| Std dev | 13.5 bp | 13.3 bp | 9.3 bp | 13.3 bp |
+| No surprise | 135 (43%) | 78 (42%) | 31 (41%) | 26 (53%) |
+| Hawkish | 79 (25%) | 25 (13%) | 39 (51%) | 15 (31%) |
+| Dovish | 98 (31%) | 84 (45%) | 6 (8%) | 8 (16%) |
 
 Presidential eras: Duisenberg/Trichet March 1999 – October 2011; Draghi November 2011 – October 2019; Lagarde November 2019 – December 2025.
+
+Note on the Draghi era: the 51% hawkish rate reflects the ZLB mechanism — the pipeline frequently assigned probability to cuts that did not materialise, generating small positive (hawkish) surprises at hold meetings. The standard deviation of 9.3 bp is the lowest of the three eras.
 
 ---
 
@@ -100,7 +104,7 @@ All documents are publicly available from the ECB website:
 | Monthly Bulletin | 1999–2014 | Agent IB | ECB website |
 | Governing Council speeches | 1999–2025 | Agent IB | [ECB Speeches](https://www.ecb.europa.eu/press/key/html/index.en.html) |
 
-A note on document availability: the ECB introduced the Accounts of the Governing Council only in January 2015. For the preceding period (1999–2014), Agent IM uses the Introductory Statement of the Press Conference of the prior meeting as a substitute. The statistical consequences of this document substitution are assessed formally via an F-test for equality of means (F = 5.135, p = 0.006).
+**Document coverage note**: the 312 meetings include ~45 bi-weekly sessions (1999–2001) and unscheduled sessions that did not have a dedicated press conference. Those meetings reuse the Introductory Statement of the most recent monthly conference; this explains the gap between 267 press conference transcripts and 312 total meetings. The document substitution from Introductory Statements (pre-2015) to Accounts (post-2015) is assessed formally via an F-test for equality of means (F = 5.135, p = 0.006).
 
 ---
 
@@ -110,15 +114,17 @@ The surprise series is used as a monetary policy shock in a Local Projections fr
 
 ### Main Finding — Asymmetric Transmission
 
-Hawkish and dovish surprises are estimated separately. At horizon h = 9 months:
+Shocks are normalised to ±25 bp. At horizon h = 9 months:
 
 | | Coefficient | Std error |
 |-|-------------|-----------|
-| Hawkish surprise | −0.857 pp | (0.302) |
-| Dovish surprise | +0.480 pp | (0.346) |
+| Hawkish surprise (β⁺) | −0.857 pp | (0.302) |
+| Dovish surprise (β⁻) | +0.480 pp | (0.346) |
 | Wald test p-value | | 0.009 |
 
-The asymmetry is statistically significant at 14 out of 24 estimated horizons, concentrated in the h = 1 to h = 16 window — a ratio of approximately 1.8 to 1. Results are robust to the inclusion of a post-2015 dummy and alternative agent weighting schemes.
+The asymmetry is statistically significant at 14 out of 24 estimated horizons, concentrated in the h = 1 to h = 16 window — a ratio of approximately 1.8 to 1.
+
+**Key robustness**: excluding the 2022–2023 hiking cycle, the hawkish coefficient *increases* to −1.103 pp (Wald p = 0.028), widening the ratio to ~4.5 to 1. The asymmetry is a structural feature of the sample, not an artefact of the 2022 episode.
 
 ---
 
@@ -160,3 +166,9 @@ pip install google-generativeai pydantic pandas numpy statsmodels scipy matplotl
 
 ---
 
+## Citation
+
+```
+Valleri, E. (2026). ECB Communications as Monetary Shocks: A Multi-Agent LLM Framework
+and Asymmetric Transmission Analysis. Master's Thesis, Università di Bologna.
+```
