@@ -11,11 +11,11 @@ M.Sc. in Applied Economics and Markets | A.Y. 2025/2026
 
 This repository contains the code and data for the master's thesis *"ECB Communications as Monetary Shocks: A Multi-Agent LLM Framework and Asymmetric Transmission Analysis"*.
 
-The project pursues two connected objectives. The first is methodological: constructing a historical series of monetary policy surprises for the European Central Bank (ECB) over the period March 1999 – December 2025, covering all 312 Governing Council meetings, by extracting quantitative signals directly from the ECB's official communications using a four-stage pipeline. The second is empirical: using this surprise series as a monetary policy shock in a Local Projections framework to estimate the dynamic transmission of ECB surprises on euro area HICP inflation, testing for asymmetry between hawkish and dovish shocks.
+The project pursues two connected objectives. The first is methodological: constructing a historical series of monetary policy surprises for the European Central Bank (ECB) over the period March 1999 – December 2025, covering all 312 Governing Council meetings, by extracting quantitative signals directly from the ECB's official communications using a four-stage pipeline. The second is empirical: using this surprise series as a monetary policy shock in a Local Projections framework to estimate the dynamic transmission of ECB surprises on euro area HICP inflation, testing for **direction-dependent asymmetry** between hawkish and dovish shocks.
 
 The pipeline is built around two methodological principles:
 
-- **Ex-ante construction**: every document used by the pipeline was publicly available before the ten-day pre-meeting blackout period. This applies to the document inputs; the language model reading them was trained on more recent data, a residual limitation acknowledged in the thesis.
+- **Ex-ante construction**: every document used by the pipeline was publicly available before the ten-day pre-meeting blackout period. This applies to the document inputs; the language model reading them was trained on more recent data, a residual limitation acknowledged in the thesis (temporal bias / outcome leakage, discussed below).
 - **Market neutrality**: expectations are formed exclusively from official institutional communications, without incorporating any asset price information.
 
 ---
@@ -56,6 +56,8 @@ The pipeline consists of four sequential stages: two LLM agents that read docume
 
 All LLM calls use Google Gemini 2.5 Flash at temperature 0.1.
 
+**Note on scope**: the econometric analysis tests **direction-dependent** asymmetry (hawkish vs dovish shocks, via a hawkish/dovish split in the Local Projections regressors), not a regime-dependent specification. A post-2015 regime interaction (document substitution / ZLB) is estimated as a robustness check, not as the main identification strategy.
+
 ---
 
 ## Dataset
@@ -69,7 +71,6 @@ All LLM calls use Google Gemini 2.5 Flash at temperature 0.1.
 | `meeting_date` | Date of the Governing Council meeting |
 | `dfr_surprise_mech` | Mechanical surprise on the Deposit Facility Rate (bp) |
 | `mro_surprise_mech` | Mechanical surprise on the Main Refinancing Operations rate (bp) |
-| `mlf_surprise_mech` | Mechanical surprise on the Marginal Lending Facility rate (bp) |
 | `dfr_direction` | Classification: `hawkish_surprise`, `dovish_surprise`, `no_surprise` |
 | `expected_change_bp` | Model's expected rate change (bp) |
 | `entropy` | Shannon entropy of the posterior distribution |
@@ -90,6 +91,18 @@ Presidential eras: Duisenberg/Trichet March 1999 – October 2011; Draghi Novemb
 
 Note on the Draghi era: the 51% hawkish rate reflects the ZLB mechanism — the pipeline frequently assigned probability to cuts that did not materialise, generating small positive (hawkish) surprises at hold meetings. The standard deviation of 9.3 bp is the lowest of the three eras.
 
+### Modal accuracy vs naïve benchmarks
+
+The pipeline's modal decision (highest-probability bin) matches the actual outcome in **71%** of meetings. Two naïve benchmarks are reported for context:
+
+| Rule | Accuracy |
+|------|----------|
+| Always predict "hold" | 81.4% |
+| Random walk (repeat last decision) | 73.6% |
+| **Pipeline (modal)** | **71%** |
+
+Both naïve rules outperform the pipeline on this metric — expected, since holds dominate the sample (81.4% of meetings) and modal accuracy rewards predicting the most frequent outcome by construction. The pipeline is not designed to optimise point accuracy: it produces a calibrated continuous expectation E[Δi] used to compute the surprise. A rule that always predicts hold would register an implausible −25bp surprise on every telegraphed cut (e.g. June 2024), whereas the pipeline — having assigned 98% probability to that cut in advance — correctly registers a near-zero surprise of −0.4bp.
+
 ---
 
 ## Document Sources
@@ -104,17 +117,28 @@ All documents are publicly available from the ECB website:
 | Monthly Bulletin | 1999–2014 | Agent IB | ECB website |
 | Governing Council speeches | 1999–2025 | Agent IB | [ECB Speeches](https://www.ecb.europa.eu/press/key/html/index.en.html) |
 
-**Document coverage note**: the 312 meetings include ~45 bi-weekly sessions (1999–2001) and unscheduled sessions that did not have a dedicated press conference. Those meetings reuse the Introductory Statement of the most recent monthly conference; this explains the gap between 267 press conference transcripts and 312 total meetings. The document substitution from Introductory Statements (pre-2015) to Accounts (post-2015) is assessed formally via an F-test for equality of means (F = 5.135, p = 0.006).
+**Document coverage note**: the 312 meetings include ~45 bi-weekly sessions (1999–2001) and unscheduled sessions that did not have a dedicated press conference. Those meetings reuse the Introductory Statement of the most recent monthly conference; this explains the gap between 267 press conference transcripts and 312 total meetings.
+
+**Structural break at 2015**: the document substitution from Introductory Statements (pre-2015) to Accounts (post-2015) is assessed with three complementary tests:
+
+| Test | Statistic | p-value |
+|------|-----------|---------|
+| F-test (equality of means) | F = 5.135 | 0.006 |
+| Kolmogorov-Smirnov (equality of distributions) | D = 0.352 | < 0.001 |
+| Mann-Whitney U (equality of distributions, rank-based) | U = 6,283.5 | < 0.001 |
+| Levene (equality of variances) | — | 0.179 |
+
+The mean shifts from −3.7bp pre-2015 to +5.0bp post-2015 (median: −0.90bp to +1.52bp). The KS and Mann-Whitney tests were added to confirm that the two periods differ in full distribution, not only in mean — the document change coincides with the ECB's shift to the zero lower bound, and the two effects cannot be separately identified. All main results are reported both with and without a post-2015 control.
 
 ---
 
 ## Empirical Results
 
-The surprise series is used as a monetary policy shock in a Local Projections framework (Jordà, 2005) to estimate the dynamic transmission of ECB surprises on euro area HICP inflation.
+The surprise series is used as a monetary policy shock in a Local Projections framework (Jordà, 2005) to estimate the dynamic transmission of ECB surprises on euro area HICP inflation, splitting the shock into hawkish (s⁺) and dovish (s⁻) components.
 
 ### Main Finding — Asymmetric Transmission
 
-Shocks are normalised to ±25 bp. At horizon h = 9 months:
+Shocks are normalised to ±25 bp. At horizon h = 9 months (peak):
 
 | | Coefficient | Std error |
 |-|-------------|-----------|
@@ -122,9 +146,23 @@ Shocks are normalised to ±25 bp. At horizon h = 9 months:
 | Dovish surprise (β⁻) | +0.480 pp | (0.346) |
 | Wald test p-value | | 0.009 |
 
-The asymmetry is statistically significant at 14 out of 24 estimated horizons, concentrated in the h = 1 to h = 16 window — a ratio of approximately 1.8 to 1.
+The asymmetry is statistically significant at 14 out of 24 estimated horizons, concentrated in the h = 1 to h = 16 window — a ratio of approximately **1.8 to 1**. This full-sample estimate is the **preferred** result.
 
-**Key robustness**: excluding the 2022–2023 hiking cycle, the hawkish coefficient *increases* to −1.103 pp (Wald p = 0.028), widening the ratio to ~4.5 to 1. The asymmetry is a structural feature of the sample, not an artefact of the 2022 episode.
+### Robustness — excluding 2022–2023
+
+Excluding the 2022–2023 hiking cycle, the hawkish coefficient *strengthens* to −1.103 pp (Wald p = 0.028) rather than weakening, confirming the asymmetry is not mechanically produced by the two largest hawkish observations. However, in this same exercise the dovish coefficient also falls sharply (to +0.245 pp), even though 2022–2023 contains almost no dovish surprises — indicating that β⁺ and β⁻ are not identified independently, but are jointly sensitive to the macroeconomic trajectory of the estimation window.
+
+**This exclusion sample yields a ratio of ~4.5 to 1, but this figure is illustrative of sensitivity, not a stronger structural estimate.** The 1.8:1 ratio from the full sample remains the headline result; the exclusion exercise is a sensitivity check confirming the asymmetry is not a 2022 artefact, not an independent confirmation of a larger effect.
+
+The asymmetry is also robust to: a post-2015 regime dummy, equal Agent IB sub-score weights, and perturbations of the Agent II aggregation weights (±0.40–0.65 on the policy/economic split).
+
+---
+
+## Limitations (acknowledged in the thesis)
+
+1. **Structural break at 2015** — document substitution and the ZLB regime shift are confounded and cannot be separately identified; the post-2015 subsample is too underpowered (<40 effective observations at long horizons) to serve as a standalone estimation window.
+2. **A-priori aggregation weights** — cannot be estimated from the data without circular inference; addressed via sensitivity analysis rather than estimation.
+3. **Temporal bias / outcome leakage** — the LLM was trained on data that may include historical ECB outcomes, potentially contaminating the ex-ante priors. Mitigated (low temperature, constrained prompts) but not fully eliminated. The natural diagnostic — cross-checking surprise series across independent models with different training cutoffs — is left to future work.
 
 ---
 
@@ -162,7 +200,7 @@ pip install google-generativeai pydantic pandas numpy statsmodels scipy matplotl
    GEMINI_API_KEY = 'your_api_key_here'
    ```
 4. Run `ECB_Pipeline_MASTER.ipynb` to process meetings and generate surprises — the pipeline saves checkpoint files after each meeting and resumes automatically if interrupted
-5. Run `ECB_LocalProjections.ipynb` for the econometric analysis
+5. Run `ECB_LocalProjections.ipynb` for the econometric analysis (baseline results, robustness checks, and the KS/Mann-Whitney break tests)
 
 ---
 
